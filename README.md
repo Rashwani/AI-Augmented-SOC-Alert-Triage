@@ -102,13 +102,32 @@ sudo venv/bin/python3 triage.py
  
 `sudo` is required because Wazuh restricts read access to `alerts.json`.
  
-### Run as a background service (optional)
+### Run as a background service
  
 Create `/etc/systemd/system/ai-triage.service` (see `ai-triage.service` in this repo), then run:
  
 ```bash
 sudo systemctl daemon-reload
 sudo systemctl enable --now ai-triage
+```
+## Challenges & Lessons Learned
+ 
+**Networking.** The instance's route table had a blackhole route to the internet gateway, so SSH and EC2 Instance Connect both failed. Fixing it meant re-associating the subnet with a route table that has a valid `0.0.0.0/0 → igw` route.
+
+EC2 Instance Connect "blackhole route" warning -->
+<img width="1813" height="570" alt="4" src="https://github.com/user-attachments/assets/0301e27a-0b38-4028-9051-7d3ead37febc" />
+
+**Wazuh installer URL.** The generic `4.x` installer URL returned an XML error page instead of a script, so bash failed with a syntax error. The fix was to use the versioned URL from the current Wazuh documentation.
+<img width="1037" height="117" alt="5" src="https://github.com/user-attachments/assets/8f05a389-28f0-4980-ae50-867f208facfc" />
+
+**Instance sizing.** Wazuh's indexer needs far more RAM and disk than free-tier instances provide. The instance was upsized and the EBS volume expanded. After the disk filled up, the OpenSearch read-only index block also had to be cleared.
+ 
+**Agent on the manager host.** Installing `wazuh-agent` on the same host as the manager conflicts on Ubuntu. The manager already monitors itself as built-in agent `000`, so no separate agent was needed.
+ 
+**API response handling.** The first version read only `response.content[0].text`, which can break if a response contains more than one content block. The fix joins every text block, and `max_tokens` was raised to 1024 to avoid cut-off responses.
+ 
+---
+
 
 
 
