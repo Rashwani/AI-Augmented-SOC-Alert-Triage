@@ -43,11 +43,13 @@ successful logins followed from it.","confidence":"High"}
  
 Raw alerts as Wazuh writes them to `alerts.json`:
  
-![Raw Wazuh alert JSON](docs/raw-alert.png)
+<img width="1462" height="602" alt="2" src="https://github.com/user-attachments/assets/3001f440-83a7-4bdc-a58f-3028234a4484" />
+
  
 The pipeline triaging live alerts, assigning a different severity to each based on context:
  
-![Triage pipeline running](docs/pipeline-running.png)
+<img width="1062" height="675" alt="9" src="https://github.com/user-attachments/assets/db6b1414-7ab8-4212-aef6-65152622e998" />
+
  
 ## Results
  
@@ -59,15 +61,18 @@ Across a test run that generated **86 Wazuh alerts** from six simulated activity
 | Medium      | 21    |
 | Low         | 28    |
  
-![Severity distribution](docs/severity-distribution.png)
+<img width="1247" height="183" alt="8" src="https://github.com/user-attachments/assets/705c2f0b-8dcf-4e2d-bfaf-0838c4e7a643" />
+
  
 The model consistently rated multi-event correlation alerts (e.g. the level-10 brute-force rule, new user/group creation) higher than isolated single events, and downgraded benign FIM changes in a test directory — behaviour you'd want from a first-pass filter.
  
 The same activity in the Wazuh Threat Hunting dashboard — 86 alerts across the run:
  
-![Wazuh Threat Hunting overview](docs/dashboard-overview.png)
- 
-![Varied alert types in the dashboard](docs/dashboard-events.png)
+<img width="1890" height="798" alt="15" src="https://github.com/user-attachments/assets/9fb05328-8843-4a0e-8ec6-a0d8034924c2" />
+
+ <img width="1880" height="737" alt="10" src="https://github.com/user-attachments/assets/45e878bb-57aa-47b0-9b09-3f66accff995" />
+
+
  
 ## Setup
  
