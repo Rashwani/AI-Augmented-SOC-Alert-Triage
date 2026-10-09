@@ -56,6 +56,14 @@ single source indicate an automated brute-force attempt against non-existent acc
 successful logins followed from it.","confidence":"High"}
 ```
  
+Raw alerts as Wazuh writes them to `alerts.json`:
+ 
+![Raw Wazuh alert JSON](docs/raw-alert.png)
+ 
+The pipeline triaging live alerts, assigning a different severity to each based on context:
+ 
+![Triage pipeline running](docs/pipeline-running.png)
+ 
 ## Results
  
 Across a test run that generated **86 Wazuh alerts** from six simulated activity types, **73 met the severity threshold and were triaged by Claude**, with the following distribution:
@@ -66,29 +74,20 @@ Across a test run that generated **86 Wazuh alerts** from six simulated activity
 | Medium      | 21    |
 | Low         | 28    |
  
+![Severity distribution](docs/severity-distribution.png)
+ 
 The model consistently rated multi-event correlation alerts (e.g. the level-10 brute-force rule, new user/group creation) higher than isolated single events, and downgraded benign FIM changes in a test directory — behaviour you'd want from a first-pass filter.
  
-## Screenshots
+The same activity in the Wazuh Threat Hunting dashboard — 86 alerts across the run:
  
-| | |
-|---|---|
-| `docs/raw-alert.png` | Raw JSON alert in `alerts.json` (input) |
-| `docs/pipeline-running.png` | `triage.py` triaging live alerts with mixed severities |
-| `docs/severity-distribution.png` | Severity breakdown across the run |
-| `docs/dashboard-overview.png` | Wazuh Threat Hunting view (86 alerts) |
-| `docs/dashboard-events.png` | Varied alert types in the dashboard |
+![Wazuh Threat Hunting overview](docs/dashboard-overview.png)
+ 
+![Varied alert types in the dashboard](docs/dashboard-events.png)
  
 ## Setup
  
-> Full build notes are in [`SETUP.md`](SETUP.md). High level:
+Full step-by-step build notes — AWS account through systemd service — are in **[SETUP.md](SETUP.md)**. In short: an Ubuntu EC2 host runs Wazuh 4.14 all-in-one and a Python virtualenv with the Anthropic SDK; the API key lives in a `.env` file; `triage.py` watches the alerts log and writes verdicts to `triage_report.jsonl`.
  
-1. Launch an Ubuntu EC2 instance (t3.large recommended; the all-in-one stack needs ~8 GB RAM and 50 GB disk).
-2. Install Wazuh: `curl -sO https://packages.wazuh.com/4.14/wazuh-install.sh && sudo bash ./wazuh-install.sh -a`
-3. Enable realtime FIM on a test directory in `/var/ossec/etc/ossec.conf`.
-4. Add your user to the `wazuh` group so the script can read the alerts log without root.
-5. Create a virtualenv and `pip install anthropic`.
-6. Store your key in `.env` as `ANTHROPIC_API_KEY=...` and run `python3 triage.py`.
-7. (Optional) Run it as a systemd service to keep it running after disconnect.
 ## Running it
  
 ```bash
@@ -106,12 +105,3 @@ Check the output:
 ```bash
 cat ~/ai-triage/triage_report.jsonl
 ```
- 
-## Limitations and honest scope
- 
-This is a learning lab, and it's worth being clear about what it does **not** replicate:
- 
-- **Benign, self-generated activity.** All "attacks" are harmless commands run on the host itself, so this tests that detection and triage *fire correctly*, not real adversary behaviour.
-- **No separate attacker.** The host monitors itself (agent 000), so source IPs and patterns aren't realistic. A dedicated attacker instance would be the highest-value next step.
-- **No false-positive tuning or ticketing.** Real SOCs deal with alert volume, noise suppression, and case management that this lab doesn't cover.
-- **LLM triage is advisory.** The model's verdict is a first-pass aid for a human analyst, not an autonomous decision. It can be wrong, and attacker-controlled log content is a genuine prompt-injection risk that this project mitigates but does not eliminate.
