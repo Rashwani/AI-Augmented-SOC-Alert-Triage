@@ -1,0 +1,11 @@
+# Secrets — never commit these
+.env
+*.pem
+
+# Python
+venv/
+__pycache__/
+*.pyc
+
+# Local output
+triage_report.jsonl
