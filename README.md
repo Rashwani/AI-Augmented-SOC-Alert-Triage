@@ -9,20 +9,8 @@ Built as a portfolio project to explore where an LLM can reduce manual effort in
 ## Architecture
  
 ```
-┌──────────────┐     writes      ┌────────────────────┐    reads new    ┌──────────────┐
-│    Wazuh     │  ───────────▶   │  alerts.json (log) │  ───────────▶   │  triage.py   │
-│  (manager +  │   JSON alerts   │  /var/ossec/logs   │   tail -f       │  (watcher)   │
-│  indexer +   │                 └────────────────────┘                 └──────┬───────┘
-│  dashboard)  │                                                               │ alert JSON
-└──────────────┘                                                               ▼
-       ▲                                                              ┌──────────────────┐
-       │ monitors (agent 000)                                         │   Claude API     │
-       │                                                              │  severity /cause │
-┌──────────────┐                                                      │  MITRE / action  │
-│  Ubuntu host │                                                      └────────┬─────────┘
-│  (EC2)       │                                                               │ verdict
-└──────────────┘                                                               ▼
-                                                                    triage_report.jsonl
+<img width="1408" height="768" alt="Gemini_Generated_Image_h7x7r5h7x7r5h7x7" src="https://github.com/user-attachments/assets/a09ddf1f-3662-4978-aaa2-e144642a4da9" />
+
 ```
  
 ## Tech stack
