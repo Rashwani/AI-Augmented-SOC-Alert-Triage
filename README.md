@@ -1,137 +1,117 @@
-# AI-Augmented-SOC-Alert-Triage
-AWS-hosted Wazuh SIEM with a Python + Claude API pipeline that triages alerts in real time, with MITRE ATT&amp;CK context, severity scoring, and recommended actions.
-
-An AI-assisted first-pass triage pipeline for Wazuh security alerts. A Python service watches Wazuh's alert stream in real time, sends qualifying alerts to Claude via the Anthropic API, and writes back a severity rating, likely cause, and recommended response action.
-<img width="1896" height="858" alt="16" src="https://github.com/user-attachments/assets/a25f9307-2aa0-4cc2-9702-11c419273144" />
-
-## Why This Project
+# AI-Augmented SOC Alert Triage
  
-Tier 1 SOC analysts spend much of their time on repetitive first-pass triage: reading an alert, judging severity, and deciding what to do next. This project automates that first pass so an analyst starts with context instead of a raw log line, while keeping the human as the final decision-maker.
-
-## Architecture
-<img width="1024" height="559" alt="image" src="https://github.com/user-attachments/assets/312fe7b5-0b2b-4b86-a6f1-e26706ea33d3" />
-
-## Tech Stack
+A lab pipeline that automates the **first pass of SOC alert triage** using the Wazuh SIEM and the Claude API. Wazuh detects suspicious activity and writes alerts to disk; a Python service watches that log, sends each qualifying alert to Claude, and gets back a structured triage verdict — severity, likely cause, MITRE ATT&CK technique, and a recommended action — which it saves to a JSONL report.
  
-| Component | Purpose |
-|---|---|
-| AWS EC2 (Ubuntu 22.04, us-east-1) | Hosts the full lab |
-| Wazuh 4.x (all-in-one) | SIEM: manager, indexer, and dashboard |
-| Python 3 + venv | Runs the triage service |
-| Anthropic Python SDK | Calls Claude for alert analysis |
-| systemd | Keeps the triage service running in the background |
-
-## How It Works
- 
-1. **Detection:** Wazuh monitors the host (SSH auth, PAM sessions, sudo, package changes, file integrity) and writes every alert as a JSON line to `/var/ossec/logs/alerts/alerts.json`.
-2. **Ingestion:** `triage.py` tails that file like `tail -f`, reading only new alerts.
-3. **Filtering:** Only alerts at or above a configurable Wazuh level (`MIN_SEVERITY_LEVEL = 5`) are sent for triage, which keeps API cost and noise down.
-4. **Enrichment:** The prompt includes the rule description, level, rule ID, MITRE ATT&CK technique, agent name, source IP, and full log line.
-5. **Analysis:** Claude returns a severity (Low / Medium / High / Critical), a likely cause, and a recommended action.
-6. **Output:** Results are appended to `triage_report.log` with the alert timestamp and description.
-
-### 1. Generate the alert
- 
-A loop of SSH logins as a non-existent user simulates password-guessing activity.
- 
-```bash
-for i in 1 2 3 4 5; do ssh wronguser@localhost; done
-```
-terminal showing the failed SSH loop 
-<img width="1012" height="325" alt="7" src="https://github.com/user-attachments/assets/a0299d97-8b8d-43ad-87f8-ca758097639f" />
-
-### 2. Wazuh detects it
- 
-Wazuh fires rule **5710** ("sshd: Attempt to login using a non-existent user"), level 5, mapped to MITRE ATT&CK **T1110.001 (Password Guessing)** and **T1021.004 (SSH)**.
-Threat Hunting events table showing rule 5710 alerts 
-<img width="1861" height="737" alt="13" src="https://github.com/user-attachments/assets/19817ba5-079a-435e-9b71-b0cd03f83b71" />
-
-### 3. Before: the raw alert
-alert detail, fields
-<img width="1160" height="771" alt="17" src="https://github.com/user-attachments/assets/240b0bc3-836f-47f1-9612-e0407a6ce789" />
-alert detail, MITRE and compliance mapping
-<img width="732" height="590" alt="18" src="https://github.com/user-attachments/assets/db7b23ba-f033-4d49-a9d4-5326d67cac25" />
-
-```
-rule.id:          5710
-rule.level:       5
-rule.description: sshd: Attempt to login using a non-existent user
-rule.mitre.id:    T1110.001, T1021.004
-data.srcip:       127.0.0.1
-data.srcuser:     wronguser
-full_log:         sshd[86745]: Invalid user wronguser from 127.0.0.1 port 39694
-```
-
-### 4. The triage service picks it up
-triage.py running and printing "Triaged:" lines 
-<img width="1657" height="286" alt="15" src="https://github.com/user-attachments/assets/7a51e945-e680-451e-ac67-df325cca34fb" />
-
-### 5. After: the AI triage assessment
-triage_report.log output
-<img width="1895" height="502" alt="14" src="https://github.com/user-attachments/assets/21956e5e-1481-408b-8d4d-3118688e612c" />
-> **Severity:** Low
->
-> **Likely cause:** The source IP is 127.0.0.1 (localhost) and the username is "wronguser," which points to a manual test or validation check rather than an external brute-force attack.
->
-> **Recommended action:** Verify whether this was an authorized test. If it was unexpected, review local user activity and cron jobs for scripts making local SSH connections. No external action is needed since the source is localhost.
- 
-The model correctly used the source IP to downgrade severity. A rule-only system would treat this the same as an attack from an external IP.
-
-## Setup
- 
-### Prerequisites
-- AWS account with an EC2 instance running Ubuntu 22.04
-- Wazuh all-in-one installed ([official docs](https://documentation.wazuh.com))
-- An Anthropic API key
-### Install
- 
-```bash
-sudo apt update && sudo apt install -y python3-pip python3-venv
-mkdir ~/ai-triage && cd ~/ai-triage
-python3 -m venv venv
-source venv/bin/activate
-pip install anthropic
-export ANTHROPIC_API_KEY="your-key-here"   # never commit this
-```
- 
-Copy `triage.py` into `~/ai-triage/`, then run it:
- 
-```bash
-sudo venv/bin/python3 triage.py
-```
- 
-`sudo` is required because Wazuh restricts read access to `alerts.json`.
- 
-### Run as a background service
- 
-Create `/etc/systemd/system/ai-triage.service` (see `ai-triage.service` in this repo), then run:
- 
-```bash
-sudo systemctl daemon-reload
-sudo systemctl enable --now ai-triage
-```
-## Challenges & Lessons Learned
- 
-**Networking.** The instance's route table had a blackhole route to the internet gateway, so SSH and EC2 Instance Connect both failed. Fixing it meant re-associating the subnet with a route table that has a valid `0.0.0.0/0 → igw` route.
-
-EC2 Instance Connect "blackhole route" warning -->
-<img width="1813" height="570" alt="4" src="https://github.com/user-attachments/assets/0301e27a-0b38-4028-9051-7d3ead37febc" />
-
-**Wazuh installer URL.** The generic `4.x` installer URL returned an XML error page instead of a script, so bash failed with a syntax error. The fix was to use the versioned URL from the current Wazuh documentation.
-<img width="1037" height="117" alt="5" src="https://github.com/user-attachments/assets/8f05a389-28f0-4980-ae50-867f208facfc" />
-
-**Instance sizing.** Wazuh's indexer needs far more RAM and disk than free-tier instances provide. The instance was upsized and the EBS volume expanded. After the disk filled up, the OpenSearch read-only index block also had to be cleared.
- 
-**Agent on the manager host.** Installing `wazuh-agent` on the same host as the manager conflicts on Ubuntu. The manager already monitors itself as built-in agent `000`, so no separate agent was needed.
- 
-**API response handling.** The first version read only `response.content[0].text`, which can break if a response contains more than one content block. The fix joins every text block, and `max_tokens` was raised to 1024 to avoid cut-off responses.
+Built as a portfolio project to explore where an LLM can reduce manual effort in a Tier 1 analyst workflow, and — just as importantly — where it can't.
  
 ---
-
-
-
-
-
-
-
-
+ 
+## Architecture
+ 
+```
+┌──────────────┐     writes      ┌────────────────────┐    reads new    ┌──────────────┐
+│    Wazuh     │  ───────────▶   │  alerts.json (log) │  ───────────▶   │  triage.py   │
+│  (manager +  │   JSON alerts   │  /var/ossec/logs   │   tail -f       │  (watcher)   │
+│  indexer +   │                 └────────────────────┘                 └──────┬───────┘
+│  dashboard)  │                                                               │ alert JSON
+└──────────────┘                                                               ▼
+       ▲                                                              ┌──────────────────┐
+       │ monitors (agent 000)                                         │   Claude API     │
+       │                                                              │  severity /cause │
+┌──────────────┐                                                      │  MITRE / action  │
+│  Ubuntu host │                                                      └────────┬─────────┘
+│  (EC2)       │                                                               │ verdict
+└──────────────┘                                                               ▼
+                                                                    triage_report.jsonl
+```
+ 
+## Tech stack
+ 
+- **Cloud:** AWS EC2 (Ubuntu 24.04 LTS)
+- **SIEM:** Wazuh 4.14 all-in-one (manager, indexer, dashboard)
+- **AI:** Python 3 + Anthropic SDK, Claude API
+- **Detections used:** SSH brute force, authentication failures, File Integrity Monitoring (FIM), user/group creation, privilege escalation, package changes
+## What the AI layer adds
+ 
+A standard Wazuh homelab stops at detection. The differentiator here is the triage layer: instead of an analyst reading each raw alert, Claude produces a consistent, structured verdict for every alert above a severity threshold. Each result is written as one JSON line so the output is measurable, not just readable.
+ 
+Design decisions worth noting:
+- **Prompt-injection aware.** Log fields can contain attacker-controlled text, so the alert is wrapped and explicitly marked as untrusted data in the system prompt, with an instruction never to follow embedded commands.
+- **Structured output.** The model is constrained to return a fixed JSON schema (`severity`, `mitre_technique`, `likely_cause`, `recommended_action`, `confidence`), making the results easy to aggregate and audit.
+- **Robust log tailing.** The watcher handles Wazuh's log rotation and partially written lines so it keeps running unattended.
+## Sample: before and after
+ 
+**Raw Wazuh alert (input):**
+```json
+{"rule":{"level":10,"description":"sshd: brute force trying to get access to the system.","id":"5712",
+"mitre":{"id":["T1110"],"tactic":["Credential Access"]}},"agent":{"name":"ip-172-31-108-235"},
+"data":{"srcip":"187.153.255.190"},"full_log":"... Failed password for invalid user ..."}
+```
+ 
+**AI triage verdict (output):**
+```json
+{"severity":"Medium","mitre_technique":"T1110","likely_cause":"Repeated failed SSH logins from a
+single source indicate an automated brute-force attempt against non-existent accounts.",
+"recommended_action":"Block the source IP at the firewall and confirm no account lockouts or
+successful logins followed from it.","confidence":"High"}
+```
+ 
+## Results
+ 
+Across a test run that generated **86 Wazuh alerts** from six simulated activity types, **73 met the severity threshold and were triaged by Claude**, with the following distribution:
+ 
+| AI severity | Count |
+|-------------|-------|
+| High        | 24    |
+| Medium      | 21    |
+| Low         | 28    |
+ 
+The model consistently rated multi-event correlation alerts (e.g. the level-10 brute-force rule, new user/group creation) higher than isolated single events, and downgraded benign FIM changes in a test directory — behaviour you'd want from a first-pass filter.
+ 
+## Screenshots
+ 
+| | |
+|---|---|
+| `docs/raw-alert.png` | Raw JSON alert in `alerts.json` (input) |
+| `docs/pipeline-running.png` | `triage.py` triaging live alerts with mixed severities |
+| `docs/severity-distribution.png` | Severity breakdown across the run |
+| `docs/dashboard-overview.png` | Wazuh Threat Hunting view (86 alerts) |
+| `docs/dashboard-events.png` | Varied alert types in the dashboard |
+ 
+## Setup
+ 
+> Full build notes are in [`SETUP.md`](SETUP.md). High level:
+ 
+1. Launch an Ubuntu EC2 instance (t3.large recommended; the all-in-one stack needs ~8 GB RAM and 50 GB disk).
+2. Install Wazuh: `curl -sO https://packages.wazuh.com/4.14/wazuh-install.sh && sudo bash ./wazuh-install.sh -a`
+3. Enable realtime FIM on a test directory in `/var/ossec/etc/ossec.conf`.
+4. Add your user to the `wazuh` group so the script can read the alerts log without root.
+5. Create a virtualenv and `pip install anthropic`.
+6. Store your key in `.env` as `ANTHROPIC_API_KEY=...` and run `python3 triage.py`.
+7. (Optional) Run it as a systemd service to keep it running after disconnect.
+## Running it
+ 
+```bash
+cd ~/ai-triage && source venv/bin/activate
+set -a; . ./.env; set +a
+python3 triage.py
+```
+ 
+In a second terminal, generate test alerts (e.g. a simulated SSH brute force):
+```bash
+for i in $(seq 1 10); do ssh -o BatchMode=yes -o StrictHostKeyChecking=no wronguser@localhost; done
+```
+ 
+Check the output:
+```bash
+cat ~/ai-triage/triage_report.jsonl
+```
+ 
+## Limitations and honest scope
+ 
+This is a learning lab, and it's worth being clear about what it does **not** replicate:
+ 
+- **Benign, self-generated activity.** All "attacks" are harmless commands run on the host itself, so this tests that detection and triage *fire correctly*, not real adversary behaviour.
+- **No separate attacker.** The host monitors itself (agent 000), so source IPs and patterns aren't realistic. A dedicated attacker instance would be the highest-value next step.
+- **No false-positive tuning or ticketing.** Real SOCs deal with alert volume, noise suppression, and case management that this lab doesn't cover.
+- **LLM triage is advisory.** The model's verdict is a first-pass aid for a human analyst, not an autonomous decision. It can be wrong, and attacker-controlled log content is a genuine prompt-injection risk that this project mitigates but does not eliminate.
